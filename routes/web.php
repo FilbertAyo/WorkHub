@@ -1,0 +1,152 @@
+<?php
+
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\CommentController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DepartmentController;
+use App\Http\Controllers\DepositController;
+use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\MinutesController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PettyController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReplenishmentController;
+use App\Http\Controllers\ReportController;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', [DashboardController::class, 'redirect'])->middleware(['auth', 'verified']);
+
+Route::get('/dashboard', [DashboardController::class, 'redirect'])
+    ->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/profile/settings', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile/settings', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::post('/profile/picture/update', [ProfileController::class, 'updateProfile'])->name('profile.image');
+
+    // Documents routes
+    Route::prefix('documents')->name('documents.')->group(function () {
+        Route::get('/', [DocumentController::class, 'index'])->name('index');
+        Route::get('/create', [DocumentController::class, 'create'])->name('create');
+        Route::post('/', [DocumentController::class, 'store'])->name('store');
+        Route::get('/{id}', [DocumentController::class, 'show'])->name('show');
+        Route::get('/{id}/edit', [DocumentController::class, 'edit'])->name('edit');
+        Route::put('/{id}', [DocumentController::class, 'update'])->name('update');
+        Route::delete('/{id}', [DocumentController::class, 'destroy'])->name('destroy');
+        Route::post('/{id}/submit', [DocumentController::class, 'submit'])->name('submit');
+        
+        // Reviewer dashboard
+        Route::get('/reviewer/dashboard', [DocumentController::class, 'reviewerDashboard'])->name('reviewer-dashboard');
+        
+        // Employee dashboard
+        Route::get('/employee/dashboard', [DocumentController::class, 'employeeDashboard'])->name('employee-dashboard');
+    });
+
+    // Minutes routes (restricted to minutes_preparer and admin)
+    Route::middleware(function ($request, $next) {
+        if (!Auth::user()->hasAnyRole(['minutes_preparer', 'admin'])) {
+            abort(403, 'Unauthorized access. Only minutes preparers can access this section.');
+        }
+        return $next($request);
+    })->prefix('minutes')->name('minutes.')->group(function () {
+        Route::get('/', [MinutesController::class, 'index'])->name('index');
+        Route::get('/create', [MinutesController::class, 'create'])->name('create');
+        Route::post('/', [MinutesController::class, 'store'])->name('store');
+        Route::get('/{id}', [MinutesController::class, 'show'])->name('show');
+        Route::get('/{id}/edit', [MinutesController::class, 'edit'])->name('edit');
+        Route::put('/{id}', [MinutesController::class, 'update'])->name('update');
+        Route::delete('/{id}', [MinutesController::class, 'destroy'])->name('destroy');
+    });
+
+    // Comments routes
+    Route::prefix('comments')->name('comments.')->group(function () {
+        Route::post('/document/{id}', [CommentController::class, 'store'])->name('store');
+        Route::put('/{id}', [CommentController::class, 'update'])->name('update');
+        Route::delete('/{id}', [CommentController::class, 'destroy'])->name('destroy');
+    });
+
+    //departments
+    Route::get('/departments', [DepartmentController::class, 'index'])->name('departments');          // list
+    Route::post('/department', [DepartmentController::class, 'store'])->name('department.store');    // create
+    Route::put('/department/{hashid}', [DepartmentController::class, 'update'])->name('department.update'); // update
+    Route::delete('/department/{hashid}', [DepartmentController::class, 'destroy'])->name('department.destroy'); // delete
+    Route::get('/department/{hashid}', [DepartmentController::class, 'show'])->name('department.show');       // show
+
+    // admin
+    Route::resource('admin', AdminController::class);
+    Route::post('/activate/{id}', [AdminController::class, 'activate'])->name('admin.activate');
+    Route::post('/users/{id}/assign-permissions', [AdminController::class, 'assignPermissions'])->name('assign.permissions');
+
+    Route::post('/petty/{id}/upload-attachment', [PettyController::class, 'updateAttachment'])->name('petty.updateAttachment');
+
+});
+
+
+Route::middleware(['auth', 'permission:request pettycash'])->group(function () {
+    Route::middleware(['auth'])->prefix('petty')->name('petty.')->group(function () {
+        // Main index route
+        Route::get('/', [PettyController::class, 'index'])->name('index');
+        
+        // Create and store routes
+        Route::get('/create', [PettyController::class, 'create'])->name('create');
+        Route::post('/store', [PettyController::class, 'store'])->name('store');
+
+        // Other routes
+        Route::get('/show/{id}', [PettyController::class, 'show'])->name('show');
+        Route::delete('/delete/{id}', [PettyController::class, 'destroy'])->name('destroy');
+    });
+
+    // Autocomplete route for destinations
+    Route::get('/stops/autocomplete', [PettyController::class, 'autocomplete'])->name('stops.autocomplete');
+});
+
+Route::middleware(['auth', 'permission:view requested pettycash'])->group(function () {
+    Route::get('pettycash/requests/list', [PettyController::class, 'requests_list'])->name('petty.list');
+    Route::get('/pettycash/request/{hashid}/details', [PettyController::class, 'request_show'])->name('petty.details');
+    Route::post('f_approve/{id}', [PettyController::class, 'f_approve'])->name('f_approve.approve');
+    Route::post('l_approve/{id}', [PettyController::class, 'l_approve'])->name('l_approve.approve');
+    Route::get('c_approve/{id}', [PettyController::class, 'c_approve'])->name('c_approve.approve');
+    Route::post('/petty/reject/{id}', [PettyController::class, 'reject'])->name('petty.reject');
+
+    Route::resource('replenishment', ReplenishmentController::class);
+    Route::post('/replenishment/initial/approve/{id}', [ReplenishmentController::class, 'firstApprove'])->name('initial.approve');
+    Route::post('/replenishment/last/approve/{id}', [ReplenishmentController::class, 'lastApprove'])->name('last.approve');
+    Route::get('/replenishment/petty/cash/list', [ReplenishmentController::class, 'pettycash'])->name('replenishment.pettycash');
+    Route::get('/replenishment/{id}/download', [ReplenishmentController::class, 'downloadPDF'])->name('replenishment.download');
+});
+
+Route::middleware(['auth', 'permission:last pettycash approval'])->group(function () {
+    Route::get('pettycash/all/requests/list', [PettyController::class, 'all_requests'])->name('all.pettycash');
+});
+
+Route::middleware(['auth', 'permission:view cashflow movements'])->group(function () {
+    Route::resource('deposit', DepositController::class);
+    Route::get('/pettycash/flow', [DepositController::class, 'cashflow'])->name('cashflow.index');
+    Route::get('/cashflow/download', [DepositController::class, 'download'])->name('cashflow.download');
+    Route::get('pettycash/requests/payments/list', [PettyController::class, 'requestsCashier'])->name('petty.cashier');
+});
+
+
+Route::middleware(['auth', 'permission:view reports'])->group(function () {
+    Route::get('reports/list', [ReportController::class, 'index'])->name('reports');
+    Route::get('reports/users', [ReportController::class, 'usersReport'])->name('reports.users');
+    Route::get('/reports/users/download/{type}', [ReportController::class, 'downloadUsers'])->name('reports.users.download');
+    Route::get('reports/petty/cash', [ReportController::class, 'pettyReport'])->name('reports.petties');
+    Route::get('/reports/petty/cash/download/{type}', [ReportController::class, 'downloadPetty'])->name('reports.petties.download');
+    Route::get('reports/petty/cash/transactions', [ReportController::class, 'transactionReport'])->name('reports.transaction');
+    Route::get('/reports/petty/cash/transaction/download/{type}', [ReportController::class, 'downloadTransaction'])->name('reports.transaction.download');
+
+    Route::get('reports/routes/prices', [ReportController::class, 'routeReport'])->name('reports.routes');
+    Route::get('/reports/routes/download', [ReportController::class, 'downloadRouteReport'])->name('reports.route.download');
+});
+
+Route::middleware(['auth', 'permission:view settings'])->group(function () {
+    Route::get('/settings/notifications', [NotificationController::class, 'index'])->name('notification.index');
+});
+
+
+// Bonus Petty Cash Routes - View Permission
+
+require __DIR__ . '/auth.php';
