@@ -48,7 +48,7 @@
                         </div>
                         <div class="col-md-6">
                             <form method="GET" action="{{ route('documents.index') }}" class="row">
-                                <div class="col-md-3 mb-2">
+                                <div class="col-md-4 mb-2">
                                     <select name="type" class="form-control">
                                         <option value="">All Types</option>
                                         <option value="weekly_plan" {{ request('type') === 'weekly_plan' ? 'selected' : '' }}>Weekly Plans</option>
@@ -57,46 +57,42 @@
                                         <option value="weekly_minutes" {{ request('type') === 'weekly_minutes' ? 'selected' : '' }}>Minutes</option>
                                     </select>
                                 </div>
-                                <div class="col-md-3 mb-2">
+                                <div class="col-md-4 mb-2">
                                     <select name="period_id" class="form-control">
-                                        <option value="">All Weeks</option>
+                                        @if($currentPeriod)
+                                            <option value="{{ $currentPeriod->id }}" {{ (!request('period_id') || request('period_id') == $currentPeriod->id) ? 'selected' : '' }}>
+                                                Current Week (Week {{ $currentPeriod->week_number }})
+                                            </option>
+                                        @endif
                                         @foreach($periods as $period)
-                                            <option value="{{ $period->id }}" {{ request('period_id') == $period->id ? 'selected' : '' }}>
-                                                Week {{ $period->week_number }} • {{ $period->date_range }}
-                                            </option>
+                                            @if(!$currentPeriod || $period->id != $currentPeriod->id)
+                                                <option value="{{ $period->id }}" {{ request('period_id') == $period->id ? 'selected' : '' }}>
+                                                    Week {{ $period->week_number }} • {{ $period->date_range }}
+                                                </option>
+                                            @endif
                                         @endforeach
                                     </select>
                                 </div>
-                                <div class="col-md-3 mb-2">
+                                <div class="col-md-4 mb-2">
                                     <select name="year" class="form-control">
-                                        <option value="">All Years</option>
+                                        <option value="{{ date('Y') }}" {{ (!request('year') || request('year') == date('Y')) ? 'selected' : '' }}>
+                                            Current Year ({{ date('Y') }})
+                                        </option>
                                         @foreach($years as $year)
-                                            <option value="{{ $year }}" {{ request('year') == $year ? 'selected' : '' }}>
-                                                {{ $year }}
-                                            </option>
+                                            @if($year != date('Y'))
+                                                <option value="{{ $year }}" {{ request('year') == $year ? 'selected' : '' }}>
+                                                    {{ $year }}
+                                                </option>
+                                            @endif
                                         @endforeach
                                     </select>
-                                </div>
-                                <div class="col-md-3 mb-2">
-                                    <input type="date" name="date_from" class="form-control" value="{{ request('date_from') }}">
-                                </div>
-                                <div class="col-md-3 mb-2">
-                                    <input type="date" name="date_to" class="form-control" value="{{ request('date_to') }}">
-                                </div>
-                                <div class="col-md-6 d-flex gap-2">
-                                    <button type="submit" class="btn btn-primary btn-sm mr-2">
-                                        <i class="fe fe-filter me-1"></i> Filter
-                                    </button>
-                                    <a href="{{ route('documents.index') }}" class="btn btn-light btn-sm">
-                                        <i class="fe fe-x me-1"></i> Reset
-                                    </a>
                                 </div>
                             </form>
                         </div>
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="row">
+                    <div class="row mb-4">
                         <div class="col-md-4 mb-3">
                             <div class="border rounded p-3 h-100">
                                 <div class="d-flex justify-content-between align-items-center">
@@ -152,5 +148,116 @@
                             </div>
                         </div>
                     </div>
+
+                    @if($documents->count() > 0)
+                        <div class="table-responsive">
+                            <table class="table table-hover table-bordered">
+                                <thead class="thead-light">
+                                    <tr>
+                                        <th class="text-center" style="width: 50px;">No.</th>
+                                        <th>Document Type</th>
+                                        <th>Title</th>
+                                        <th>Author</th>
+                                        <th>Week</th>
+                                        <th>Created</th>
+                                        <th>Last Updated</th>
+                                        <th class="text-center" style="width: 120px;">Status</th>
+                                        <th class="text-center" style="width: 150px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($documents as $document)
+                                        <tr>
+                                            <td class="text-center">{{ ($documents->currentPage() - 1) * $documents->perPage() + $loop->iteration }}</td>
+                                            <td>
+                                                <span class="badge badge-info">
+                                                    <i class="fe fe-file me-1"></i>
+                                                    {{ $document->type_name }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <strong>{{ $document->getDataField('title', 'Untitled') }}</strong>
+                                            </td>
+                                            <td>
+                                                @if($document->user)
+                                                    <div class="d-flex align-items-center">
+                                                        <div class="avatar avatar-sm bg-primary text-white rounded-circle d-flex align-items-center justify-content-center mr-2" style="width: 24px; height: 24px; font-size: 10px;">
+                                                            {{ strtoupper(substr($document->user->name, 0, 1)) }}
+                                                        </div>
+                                                        <span>{{ $document->user->name }}</span>
+                                                    </div>
+                                                @else
+                                                    <span class="text-muted">-</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                @if($document->period)
+                                                    <small class="text-muted">
+                                                        Week {{ $document->period->week_number }}
+                                                    </small>
+                                                @else
+                                                    <span class="text-muted">-</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <small class="text-muted">
+                                                    {{ $document->created_at->format('M d, Y') }}
+                                                </small>
+                                            </td>
+                                            <td>
+                                                <small class="text-muted">
+                                                    {{ $document->updated_at->format('M d, Y') }}
+                                                    <br>
+                                                    <span class="text-muted">{{ $document->updated_at->diffForHumans() }}</span>
+                                                </small>
+                                            </td>
+                                            <td class="text-center">
+                                                @if($document->state === 'draft')
+                                                    <span class="badge badge-warning">
+                                                        <i class="fe fe-edit me-1"></i>Draft
+                                                    </span>
+                                                @else
+                                                    <span class="badge badge-success">
+                                                        <i class="fe fe-check-circle me-1"></i>Submitted
+                                                    </span>
+                                                @endif
+                                            </td>
+                                            <td class="text-center">
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <a href="{{ route('documents.show', \Vinkla\Hashids\Facades\Hashids::encode($document->id)) }}"
+                                                        class="btn btn-info text-white" title="View">
+                                                        <i class="fe fe-eye"></i>
+                                                    </a>
+                                                    @if($document->canBeEdited())
+                                                        <a href="{{ route('documents.edit', \Vinkla\Hashids\Facades\Hashids::encode($document->id)) }}"
+                                                            class="btn btn-primary text-white" title="Edit">
+                                                            <i class="fe fe-edit"></i>
+                                                        </a>
+                                                    @endif
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="mt-3">
+                            {{ $documents->links() }}
+                        </div>
+                    @else
+                        <div class="text-center py-5">
+                            <i class="fe fe-file-text fs-1 text-muted"></i>
+                            <p class="text-muted mb-3 mt-3">No documents found</p>
+                            <p class="text-muted small">Try adjusting your filters or create a new document.</p>
+                            <a href="{{ route('documents.create') }}" class="btn btn-primary">
+                                <i class="fe fe-plus-circle me-1"></i>Create New Document
+                            </a>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
 </x-app-layout>
 

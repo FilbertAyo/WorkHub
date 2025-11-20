@@ -25,34 +25,37 @@ class DocumentController extends Controller
             $query->forUser($user->id);
         }
 
-        // Filter by type if provided
+        // Get current period for defaults
+        $currentPeriod = WorkPeriod::getCurrent();
+        $currentYear = date('Y');
+
+        // Filter by type if provided (default: all types)
         if ($request->has('type') && $request->type) {
             $query->ofType($request->type);
         }
 
-        // Filter by period if provided
-        if ($request->has('period_id') && $request->period_id) {
-            $query->forPeriod($request->period_id);
+        // Filter by period - default to current period if not specified
+        $periodId = $request->input('period_id');
+        if (!$periodId && $currentPeriod) {
+            $periodId = $currentPeriod->id;
+        }
+        if ($periodId) {
+            $query->forPeriod($periodId);
         }
 
-        // Filter by year if provided
-        if ($request->has('year') && $request->year) {
-            $query->whereHas('period', function($q) use ($request) {
-                $q->where('year', $request->year);
+        // Filter by year - default to current year if not specified
+        $year = $request->input('year');
+        if (!$year) {
+            $year = $currentYear;
+        }
+        if ($year) {
+            $query->whereHas('period', function($q) use ($year) {
+                $q->where('year', $year);
             });
-        }
-
-        if ($request->filled('date_from')) {
-            $query->whereDate('created_at', '>=', $request->date_from);
-        }
-
-        if ($request->filled('date_to')) {
-            $query->whereDate('created_at', '<=', $request->date_to);
         }
 
         $documents = $query->latest()->paginate(15)->withQueryString();
 
-        $currentPeriod = WorkPeriod::getCurrent();
         $nextPeriod = $currentPeriod ? $currentPeriod->getNextPeriod() : null;
         $deadlineStatuses = null;
         if ($currentPeriod) {
