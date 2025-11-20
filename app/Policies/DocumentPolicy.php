@@ -114,12 +114,14 @@ class DocumentPolicy
             return false;
         }
 
-        // User owns the document
+        if (!$this->hasOpenPeriod($document)) {
+            return false;
+        }
+
         if ($document->user_id === $user->id) {
             return true;
         }
 
-        // Admin can update any draft document
         if ($user->hasRole('admin')) {
             return true;
         }
@@ -148,12 +150,14 @@ class DocumentPolicy
             return false;
         }
 
-        // User owns the document
+        if (!$this->hasOpenPeriod($document)) {
+            return false;
+        }
+
         if ($document->user_id === $user->id) {
             return true;
         }
 
-        // Admin can delete any draft document
         if ($user->hasRole('admin')) {
             return true;
         }
@@ -182,12 +186,14 @@ class DocumentPolicy
             return false;
         }
 
-        // User owns the document
+        if (!$this->hasOpenPeriod($document)) {
+            return false;
+        }
+
         if ($document->user_id === $user->id) {
             return true;
         }
 
-        // Admin can submit any draft document
         if ($user->hasRole('admin')) {
             return true;
         }
@@ -211,5 +217,25 @@ class DocumentPolicy
     {
         // Only admin can permanently delete documents
         return $user->hasRole('admin');
+    }
+
+    /**
+     * Ensure documents tied to work periods can only be modified when the period is open.
+     */
+    private function hasOpenPeriod(Document $document): bool
+    {
+        if (!$document->period) {
+            return true;
+        }
+
+        if (in_array($document->type, [
+            Document::TYPE_WEEKLY_PLAN,
+            Document::TYPE_WEEKLY_REPORT,
+            Document::TYPE_MONTHLY_REPORT,
+        ])) {
+            return $document->period->isOpen();
+        }
+
+        return true;
     }
 }

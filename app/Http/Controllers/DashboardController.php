@@ -4,13 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\Department;
+use App\Models\Document;
 use App\Models\Petty;
 use App\Models\User;
+use App\Models\WorkPeriod;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Auth;
-use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
@@ -31,7 +33,7 @@ class DashboardController extends Controller
         $pettyNo = Petty::all()->count();
         $paidAmount = Petty::where('status', 'paid')->sum('amount');
         $myExpense = Petty::where('user_id', Auth::user()->id)->where('status', 'paid')->sum('amount');
-        $branchNo = Branch::all()->count();
+
         $departmentNo = Department::all()->count();
 
         // Status breakdown for pie chart
@@ -56,7 +58,7 @@ class DashboardController extends Controller
         }
 
         // Top 5 departments by spending
-        $topDepartments = Petty::where('status', 'paid')
+        $topDepartments = Petty::where('petties.status', 'paid')
             ->join('departments', 'petties.department_id', '=', 'departments.id')
             ->select('departments.name', DB::raw('SUM(petties.amount) as total'))
             ->groupBy('departments.id', 'departments.name')
@@ -123,12 +125,111 @@ class DashboardController extends Controller
             ->limit(5)
             ->get();
 
+        // Document/Work Period related data for dashboard
+        $user = Auth::user();
+        $currentPeriod = WorkPeriod::getCurrent();
+        $nextPeriod = $currentPeriod ? $currentPeriod->getNextPeriod() : null;
+
+        // Calculate deadline statuses
+        $periodDeadlineStatuses = null;
+        if ($currentPeriod) {
+            $periodDeadlineStatuses = [
+                'plan_badge' => $currentPeriod->getPlanDeadlineBadgeClass(),
+                'plan_text' => $currentPeriod->getDeadlineStatusText('plan'),
+                'plan_due' => $currentPeriod->plan_deadline,
+                'report_badge' => $currentPeriod->getReportDeadlineBadgeClass(),
+                'report_text' => $currentPeriod->getDeadlineStatusText('report'),
+                'report_due' => $currentPeriod->report_deadline,
+            ];
+        }
+
+        // Get available document types for user
+        $dashboardAvailableTypes = Document::getAvailableTypesForUser($user);
+
+        // Get pending document counts by type
+        $pendingDocuments = Document::forUser($user->id)
+            ->drafts()
+            ->get();
+
+        $dashboardPendingDocs = [
+            'weekly_plan' => $pendingDocuments->where('type', Document::TYPE_WEEKLY_PLAN)->count(),
+            'weekly_report' => $pendingDocuments->where('type', Document::TYPE_WEEKLY_REPORT)->count(),
+            'monthly_report' => $pendingDocuments->where('type', Document::TYPE_MONTHLY_REPORT)->count(),
+        ];
+
+        // Check if user can see weekly dashboard
+        // Only employees and admins can see (exclude reviewers and minutes_preparer unless admin)
+        $canSeeWeeklyDashboard = !$user->hasRole('admin') && $user->hasAnyRole(['reviewer', 'minutes_preparer'])
+            ? false
+            : true;
+
+        // Prepare weekly dashboard data if applicable
+        $weeklyDashboardData = null;
+        if ($canSeeWeeklyDashboard) {
+            $periodOptions = WorkPeriod::orderBy('year', 'desc')
+                ->orderBy('week_number', 'desc')
+                ->take(20)
+                ->get();
+
+            $allDocuments = Document::with('comments')
+                ->forUser($user->id)
+                ->latest()
+                ->get();
+
+            $timelineData = WorkPeriod::orderBy('year', 'desc')
+                ->orderBy('week_number', 'desc')
+                ->take(6)
+                ->get()
+                ->map(function ($period) use ($user) {
+                    $plan = Document::where('user_id', $user->id)
+                        ->where('period_id', $period->id)
+                        ->where('type', Document::TYPE_WEEKLY_PLAN)
+                        ->first();
+
+                    $report = Document::where('user_id', $user->id)
+                        ->where('period_id', $period->id)
+                        ->where('type', Document::TYPE_WEEKLY_REPORT)
+                        ->first();
+
+                    return [
+                        'period' => $period,
+                        'plan' => $plan,
+                        'report' => $report,
+                        'plan_status' => $plan?->state ?? 'missing',
+                        'report_status' => $report?->state ?? 'missing',
+                    ];
+                })
+                ->sortByDesc(fn ($entry) => $entry['period']->week_start_date)
+                ->values();
+
+            $stats = [
+                'total_pending' => $pendingDocuments->count(),
+                'total_submitted' => $allDocuments->where('state', Document::STATE_SUBMITTED)->count(),
+                'weekly_plan_pending' => $dashboardPendingDocs['weekly_plan'],
+                'weekly_report_pending' => $dashboardPendingDocs['weekly_report'],
+                'monthly_report_pending' => $dashboardPendingDocs['monthly_report'],
+            ];
+
+            $weeklyDashboardData = [
+                'pendingDocuments' => $pendingDocuments,
+                'allDocuments' => $allDocuments,
+                'stats' => $stats,
+                'periodInfo' => [
+                    'current' => $currentPeriod,
+                    'next' => $nextPeriod,
+                ],
+                'deadlineStatuses' => $periodDeadlineStatuses,
+                'availableTypes' => $dashboardAvailableTypes,
+                'periodOptions' => $periodOptions,
+                'timelineData' => $timelineData,
+            ];
+        }
+
         return view('dashboard', compact(
             'userNo',
             'pettyNo',
             'paidAmount',
             'myExpense',
-            'branchNo',
             'departmentNo',
             'statusBreakdown',
             'monthlyExpenses',
@@ -144,7 +245,15 @@ class DashboardController extends Controller
             'myStatusBreakdown',
             'myMonthlyRequests',
             'myMonthLabels',
-            'myRecentRequests'
+            'myRecentRequests',
+            // Document/Work Period data
+            'currentPeriod',
+            'nextPeriod',
+            'periodDeadlineStatuses',
+            'dashboardAvailableTypes',
+            'dashboardPendingDocs',
+            'canSeeWeeklyDashboard',
+            'weeklyDashboardData'
         ));
     }
 

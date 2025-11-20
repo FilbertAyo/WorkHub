@@ -21,6 +21,154 @@
         </div>
     @endif
 
+    @php
+        $currentPeriod = $periodInfo['current'] ?? null;
+        $nextPeriod = $periodInfo['next'] ?? null;
+    @endphp
+
+    <div class="row mb-3">
+        <div class="col-md-12">
+            <form method="GET" action="{{ route('documents.employee-dashboard') }}" class="card shadow-none border">
+                <div class="card-body d-md-flex align-items-center">
+                    <div class="flex-grow-1 mb-3 mb-md-0">
+                        <label for="periodSelector" class="form-label text-muted mb-1">
+                            <i class="fe fe-calendar me-1"></i>Select Week to View
+                        </label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <select name="period_id" id="periodSelector" class="form-control">
+                                    <option value="" disabled {{ (old('type') || isset($selectedType)) ? '' : 'selected' }}>
+                                        Current Week @if($currentPeriod) (Week {{ $currentPeriod->week_number }} - {{ $currentPeriod->date_range }}) @endif
+                                    </option>
+                                    @foreach($periodOptions as $option)
+                                        <option value="{{ $option->id }}" {{ (string)$periodFilterId === (string)$option->id ? 'selected' : '' }}>
+                                            Week {{ $option->week_number }} • {{ $option->date_range }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-md-3 mt-3 mt-md-0">
+                                <button type="submit" class="btn btn-primary btn-block">
+                                    <i class="fe fe-filter me-1"></i>Apply
+                                </button>
+                            </div>
+                            @if($periodFilterId)
+                                <div class="col-md-3 mt-3 mt-md-0">
+                                    <a href="{{ route('documents.employee-dashboard') }}" class="btn btn-light btn-block">
+                                        <i class="fe fe-x me-1"></i>Reset
+                                    </a>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    @if($currentPeriod)
+        <div class="row mb-4">
+            <div class="col-md-8 mb-3">
+                <div class="card border shadow-none h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <p class="text-muted mb-1">Current Work Week</p>
+                                <h4 class="mb-1">Week {{ $currentPeriod->week_number }} • {{ $currentPeriod->date_range }}</h4>
+                                @if($nextPeriod)
+                                    <small class="text-muted">Preparing plan for Week {{ $nextPeriod->week_number }} ({{ $nextPeriod->date_range }})</small>
+                                @endif
+                            </div>
+                            <span class="badge badge-{{ $currentPeriod->status === 'open' ? 'success' : 'secondary' }}">
+                                {{ ucfirst($currentPeriod->status) }}
+                            </span>
+                        </div>
+                        @if($deadlineStatuses)
+                            <div class="row mt-4">
+                                <div class="col-md-6 mb-3 mb-md-0">
+                                    <div class="border rounded p-3 h-100">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <p class="text-muted mb-1">
+                                                    <i class="fe fe-target text-info me-1"></i>Plan Deadline
+                                                </p>
+                                                <h5 class="mb-1">{{ \Carbon\Carbon::parse($deadlineStatuses['plan_due'])->format('M d, Y') }}</h5>
+                                                <small class="text-muted">Submit plan for next week</small>
+                                            </div>
+                                            <span class="badge {{ $deadlineStatuses['plan_badge'] }}">
+                                                {{ $deadlineStatuses['plan_text'] }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="border rounded p-3 h-100">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <p class="text-muted mb-1">
+                                                    <i class="fe fe-activity text-primary me-1"></i>Report Deadline
+                                                </p>
+                                                <h5 class="mb-1">{{ \Carbon\Carbon::parse($deadlineStatuses['report_due'])->format('M d, Y') }}</h5>
+                                                <small class="text-muted">Submit report for this week</small>
+                                            </div>
+                                            <span class="badge {{ $deadlineStatuses['report_badge'] }}">
+                                                {{ $deadlineStatuses['report_text'] }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @else
+                            <div class="alert alert-warning mt-3 mb-0">
+                                <i class="fe fe-alert-triangle me-1"></i>
+                                No open work period found. Please contact your administrator.
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card border shadow-none h-100">
+                    <div class="card-header bg-white border-bottom">
+                        <h6 class="mb-0"><i class="fe fe-zap me-1 text-primary"></i>Quick Actions</h6>
+                    </div>
+                    <div class="card-body">
+                        @if(isset($availableTypes['weekly_plan']))
+                            <a href="{{ route('documents.create') }}?type=weekly_plan" class="btn btn-outline-info btn-block mb-2">
+                                <i class="fe fe-calendar me-1"></i> New Weekly Plan
+                            </a>
+                        @else
+                            <button class="btn btn-outline-info btn-block mb-2" disabled>
+                                <i class="fe fe-calendar-off me-1"></i> Plan Unavailable
+                            </button>
+                        @endif
+
+                        @if(isset($availableTypes['weekly_report']))
+                            <a href="{{ route('documents.create') }}?type=weekly_report" class="btn btn-outline-primary btn-block mb-2">
+                                <i class="fe fe-file-text me-1"></i> New Weekly Report
+                            </a>
+                        @else
+                            <button class="btn btn-outline-primary btn-block mb-2" disabled>
+                                <i class="fe fe-file-minus me-1"></i> Report Unavailable
+                            </button>
+                        @endif
+
+                        @if(isset($availableTypes['monthly_report']))
+                            <a href="{{ route('documents.create') }}?type=monthly_report" class="btn btn-outline-dark btn-block">
+                                <i class="fe fe-bar-chart me-1"></i> New Monthly Report
+                            </a>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+    @else
+        <div class="alert alert-warning">
+            <i class="fe fe-alert-triangle me-1"></i>
+            No active work week available. Your administrator needs to create the current work period before you can submit weekly plans or reports.
+        </div>
+    @endif
+
     <!-- Statistics Cards -->
     <div class="row mb-3">
         <div class="col-md-3 col-sm-6 mb-3">
@@ -60,6 +208,11 @@
                         <div class="flex-grow-1">
                             <span class="text-muted d-block">Weekly Plans Pending</span>
                             <h3 class="mb-0 text-info">{{ $stats['weekly_plan_pending'] }}</h3>
+                            @if($deadlineStatuses)
+                                <span class="badge {{ $deadlineStatuses['plan_badge'] }}">
+                                    {{ $deadlineStatuses['plan_text'] }}
+                                </span>
+                            @endif
                         </div>
                         <div class="text-info">
                             <i class="fe fe-calendar fs-1"></i>
@@ -75,6 +228,11 @@
                         <div class="flex-grow-1">
                             <span class="text-muted d-block">Weekly Reports Pending</span>
                             <h3 class="mb-0 text-primary">{{ $stats['weekly_report_pending'] }}</h3>
+                            @if($deadlineStatuses)
+                                <span class="badge {{ $deadlineStatuses['report_badge'] }}">
+                                    {{ $deadlineStatuses['report_text'] }}
+                                </span>
+                            @endif
                         </div>
                         <div class="text-primary">
                             <i class="fe fe-file-text fs-1"></i>
@@ -274,5 +432,77 @@
             </div>
         </div>
     </div>
-</x-app-layout>
 
+    <!-- Timeline Section -->
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card shadow-none border">
+                <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fe fe-git-merge me-2"></i> Recent Week Timeline
+                    </h5>
+                    <small class="text-muted">Track your plan/report status over the last 6 weeks</small>
+                </div>
+                <div class="card-body">
+                    @if($timelineData->count())
+                        <div class="timeline">
+                            @foreach($timelineData as $entry)
+                                @php
+                                    $period = $entry['period'];
+                                    $planStatus = $entry['plan_status'];
+                                    $reportStatus = $entry['report_status'];
+                                    $planBadge = $planStatus === 'submitted' ? 'badge-success' : ($planStatus === 'draft' ? 'badge-warning' : 'badge-secondary');
+                                    $reportBadge = $reportStatus === 'submitted' ? 'badge-success' : ($reportStatus === 'draft' ? 'badge-warning' : 'badge-secondary');
+                                @endphp
+                                <div class="timeline-item pb-3 mb-3 border-bottom">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <h6 class="mb-1">Week {{ $period->week_number }} • {{ $period->date_range }}</h6>
+                                            <small class="text-muted">Plan due {{ \Carbon\Carbon::parse($period->plan_deadline)->format('M d') }} • Report due {{ \Carbon\Carbon::parse($period->report_deadline)->format('M d') }}</small>
+                                        </div>
+                                        <span class="badge badge-outline-{{ $period->isOpen() ? 'success' : 'secondary' }}">
+                                            {{ ucfirst($period->status) }}
+                                        </span>
+                                    </div>
+                                    <div class="row mt-3">
+                                        <div class="col-md-6">
+                                            <div class="border rounded p-3 h-100">
+                                                <p class="text-muted mb-1"><i class="fe fe-target me-1 text-info"></i>Weekly Plan</p>
+                                                @if($planStatus === 'missing')
+                                                    <span class="badge badge-secondary">Not created</span>
+                                                @else
+                                                    <span class="badge {{ $planBadge }}">{{ ucfirst($planStatus) }}</span>
+                                                    @if($entry['plan'])
+                                                        <a href="{{ route('documents.show', \Vinkla\Hashids\Facades\Hashids::encode($entry['plan']->id)) }}" class="btn btn-link btn-sm p-0 ml-2">View</a>
+                                                    @endif
+                                                @endif
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="border rounded p-3 h-100">
+                                                <p class="text-muted mb-1"><i class="fe fe-activity me-1 text-primary"></i>Weekly Report</p>
+                                                @if($reportStatus === 'missing')
+                                                    <span class="badge badge-secondary">Not created</span>
+                                                @else
+                                                    <span class="badge {{ $reportBadge }}">{{ ucfirst($reportStatus) }}</span>
+                                                    @if($entry['report'])
+                                                        <a href="{{ route('documents.show', \Vinkla\Hashids\Facades\Hashids::encode($entry['report']->id)) }}" class="btn btn-link btn-sm p-0 ml-2">View</a>
+                                                    @endif
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @else
+                        <div class="text-center py-4">
+                            <i class="fe fe-git-branch fs-1 text-muted"></i>
+                            <p class="text-muted mt-2 mb-0">No timeline data available yet.</p>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+</x-app-layout>

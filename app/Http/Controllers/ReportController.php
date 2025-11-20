@@ -169,47 +169,5 @@ class ReportController extends Controller
         return back();
     }
 
-    public function routeReport(Request $request)
-    {
-        // Get only trips that have a 'petty' with status = paid
-        $pickingPoints = Trip::whereHas('petty', function ($query) {
-            $query->where('status', 'paid');
-        })
-            ->with(['stops', 'petty.transMode'])
-            ->get();
-
-        $routes = $pickingPoints->map(function ($trip) {
-            return [
-                'pick_point' => $trip->startPoint->name ?? 'Pick Point',
-                'destinations' => $trip->stops->pluck('destination'),
-                'petty_amount' => $trip->petty->amount ?? 0,
-                'transport_mode' => optional($trip->petty->transMode)->name ?? 'N/A',
-            ];
-        });
-
-        return view('reports.routes.index', compact('routes'));
-    }
-
-
- public function downloadRouteReport(Request $request)
-{
-    $pickingPoints = Trip::whereHas('petty', function ($query) {
-        $query->where('status', 'paid');
-    })
-    ->with(['stops', 'petty.transMode'])
-    ->get();
-
-    $routes = $pickingPoints->map(function ($trip) {
-        return [
-            'pick_point' => $trip->startPoint->name ?? 'Pick Point',
-            'destinations' => $trip->stops->pluck('destination'),
-            'petty_amount' => $trip->petty->amount ?? 0,
-            'transport_mode' => optional($trip->petty->transMode)->name ?? 'N/A',
-        ];
-    });
-
-    $pdf = PDF::loadView('reports.routes.pdf', compact('routes'));
-    return $pdf->download('route_report.pdf');
-}
 
 }

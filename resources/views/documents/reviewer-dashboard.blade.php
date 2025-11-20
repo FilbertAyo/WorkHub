@@ -126,6 +126,28 @@
                                     <option value="last_month" {{ request('period') == 'last_month' ? 'selected' : '' }}>Last Month</option>
                                 </select>
                             </div>
+                            <div class="col-md-3 mb-2">
+                                <label class="form-label small text-muted">Specific Week</label>
+                                <select class="form-control form-control-sm" name="work_period_id">
+                                    <option value="">Any Week</option>
+                                    @foreach($periodOptions as $periodOption)
+                                        <option value="{{ $periodOption->id }}" {{ request('work_period_id') == $periodOption->id ? 'selected' : '' }}>
+                                            Week {{ $periodOption->week_number }} • {{ $periodOption->date_range }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-md-3 mb-2">
+                                <label class="form-label small text-muted">Year</label>
+                                <select class="form-control form-control-sm" name="year">
+                                    <option value="">Any Year</option>
+                                    @foreach($years as $year)
+                                        <option value="{{ $year }}" {{ request('year') == $year ? 'selected' : '' }}>
+                                            {{ $year }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
                             <div class="col-md-3 mb-2 d-flex align-items-end">
                                 <button type="submit" class="btn btn-primary btn-sm w-100">
                                     <i class="fe fe-filter me-1"></i> Apply Filters

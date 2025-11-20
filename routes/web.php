@@ -12,6 +12,7 @@ use App\Http\Controllers\PettyController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReplenishmentController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\WorkPeriodController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -36,21 +37,16 @@ Route::middleware('auth')->group(function () {
         Route::put('/{id}', [DocumentController::class, 'update'])->name('update');
         Route::delete('/{id}', [DocumentController::class, 'destroy'])->name('destroy');
         Route::post('/{id}/submit', [DocumentController::class, 'submit'])->name('submit');
-        
+
         // Reviewer dashboard
         Route::get('/reviewer/dashboard', [DocumentController::class, 'reviewerDashboard'])->name('reviewer-dashboard');
-        
+
         // Employee dashboard
         Route::get('/employee/dashboard', [DocumentController::class, 'employeeDashboard'])->name('employee-dashboard');
     });
 
-    // Minutes routes (restricted to minutes_preparer and admin)
-    Route::middleware(function ($request, $next) {
-        if (!Auth::user()->hasAnyRole(['minutes_preparer', 'admin'])) {
-            abort(403, 'Unauthorized access. Only minutes preparers can access this section.');
-        }
-        return $next($request);
-    })->prefix('minutes')->name('minutes.')->group(function () {
+    // Minutes routes (restricted to minutes_preparer and admin - authorization handled in controller)
+    Route::prefix('minutes')->name('minutes.')->group(function () {
         Route::get('/', [MinutesController::class, 'index'])->name('index');
         Route::get('/create', [MinutesController::class, 'create'])->name('create');
         Route::post('/', [MinutesController::class, 'store'])->name('store');
@@ -88,7 +84,7 @@ Route::middleware(['auth', 'permission:request pettycash'])->group(function () {
     Route::middleware(['auth'])->prefix('petty')->name('petty.')->group(function () {
         // Main index route
         Route::get('/', [PettyController::class, 'index'])->name('index');
-        
+
         // Create and store routes
         Route::get('/create', [PettyController::class, 'create'])->name('create');
         Route::post('/store', [PettyController::class, 'store'])->name('store');
@@ -138,12 +134,28 @@ Route::middleware(['auth', 'permission:view reports'])->group(function () {
     Route::get('reports/petty/cash/transactions', [ReportController::class, 'transactionReport'])->name('reports.transaction');
     Route::get('/reports/petty/cash/transaction/download/{type}', [ReportController::class, 'downloadTransaction'])->name('reports.transaction.download');
 
-    Route::get('reports/routes/prices', [ReportController::class, 'routeReport'])->name('reports.routes');
     Route::get('/reports/routes/download', [ReportController::class, 'downloadRouteReport'])->name('reports.route.download');
 });
 
 Route::middleware(['auth', 'permission:view settings'])->group(function () {
     Route::get('/settings/notifications', [NotificationController::class, 'index'])->name('notification.index');
+});
+
+// Work Periods Management (Admin only - checked in controller)
+Route::middleware('auth')->group(function () {
+    Route::resource('work-periods', WorkPeriodController::class)->names([
+        'index' => 'work-periods.index',
+        'create' => 'work-periods.create',
+        'store' => 'work-periods.store',
+        'show' => 'work-periods.show',
+        'edit' => 'work-periods.edit',
+        'update' => 'work-periods.update',
+        'destroy' => 'work-periods.destroy',
+    ]);
+
+    // Additional routes for work periods
+    Route::post('/work-periods/{id}/close', [WorkPeriodController::class, 'close'])->name('work-periods.close');
+    Route::post('/work-periods/{id}/archive', [WorkPeriodController::class, 'archive'])->name('work-periods.archive');
 });
 
 

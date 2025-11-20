@@ -91,6 +91,19 @@
                             <strong>{{ $document->updated_at->format('M d, Y h:i A') }}</strong>
                         </div>
                     </div>
+
+                    @if($document->period)
+                        <div class="mb-3">
+                            <label class="text-muted small mb-1">Work Period</label>
+                            <div class="d-flex align-items-center">
+                                <i class="fe fe-calendar me-2 text-primary"></i>
+                                <div>
+                                    <strong>Week {{ $document->period->week_number }} of {{ $document->period->year }}</strong><br>
+                                    <small class="text-muted">{{ $document->period->date_range }}</small>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </div>
 
@@ -132,6 +145,62 @@
 
         <!-- Document Content -->
         <div class="col-lg-8">
+            @if($relatedDocument || $relatedAction)
+                <div class="card shadow-none border mb-4">
+                    <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fe fe-link me-2"></i>
+                            Related {{ $document->type === \App\Models\Document::TYPE_WEEKLY_PLAN ? 'Weekly Report' : 'Weekly Plan' }}
+                        </h5>
+                        @if($relatedDocument)
+                            <span class="badge badge-success">
+                                <i class="fe fe-check me-1"></i>Available
+                            </span>
+                        @else
+                            <span class="badge badge-warning">
+                                <i class="fe fe-alert-triangle me-1"></i>Missing
+                            </span>
+                        @endif
+                    </div>
+                    <div class="card-body">
+                        @if($relatedDocument)
+                            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                                <div class="mb-2">
+                                    <p class="text-muted mb-1">Document Title</p>
+                                    <h5 class="mb-0">{{ $relatedDocument->getDataField('title', 'Untitled Document') }}</h5>
+                                    <small class="text-muted">
+                                        {{ $relatedDocument->type_name }} • {{ $relatedDocument->updated_at->format('M d, Y') }}
+                                    </small>
+                                </div>
+                                <div class="btn-group">
+                                    <a href="{{ route('documents.show', \Vinkla\Hashids\Facades\Hashids::encode($relatedDocument->id)) }}" class="btn btn-info text-white">
+                                        <i class="fe fe-eye me-1"></i> View
+                                    </a>
+                                    @if($relatedDocument->canBeEdited())
+                                        <a href="{{ route('documents.edit', \Vinkla\Hashids\Facades\Hashids::encode($relatedDocument->id)) }}" class="btn btn-primary">
+                                            <i class="fe fe-edit me-1"></i> Edit
+                                        </a>
+                                    @endif
+                                </div>
+                            </div>
+                        @elseif($relatedAction)
+                            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                                <div class="mb-2">
+                                    <p class="text-muted mb-1">No related document found.</p>
+                                    <h5 class="mb-0">{{ $relatedAction['label'] }}</h5>
+                                    <small class="text-muted">{{ $relatedAction['description'] ?? '' }}</small>
+                                </div>
+                                <a href="{{ $relatedAction['route'] }}" class="btn btn-outline-primary">
+                                    <i class="fe fe-plus-circle me-1"></i> Create
+                                </a>
+                            </div>
+                        @else
+                            <div class="text-muted">Related document information is not available.</div>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
             <div class="card shadow-none border mb-4">
                 <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">

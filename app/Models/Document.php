@@ -32,6 +32,7 @@ class Document extends Model
      */
     protected $fillable = [
         'user_id',
+        'period_id',
         'type',
         'data',
         'state',
@@ -174,6 +175,16 @@ class Document extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Relationship: Document belongs to WorkPeriod
+     *
+     * @return BelongsTo
+     */
+    public function period(): BelongsTo
+    {
+        return $this->belongsTo(WorkPeriod::class);
     }
 
     /**
@@ -338,16 +349,45 @@ class Document extends Model
     }
 
     /**
+     * Scope: Filter by period
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param int $periodId
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeForPeriod($query, int $periodId)
+    {
+        return $query->where('period_id', $periodId);
+    }
+
+    /**
      * Check if a user can create this document type based on their role
      *
      * @param User $user
      * @param string $type
+     * @param WorkPeriod|null $period
      * @return bool
      */
-    public static function canUserCreateType(User $user, string $type): bool
+    public static function canUserCreateType(User $user, string $type, ?WorkPeriod $period = null): bool
     {
-        // Employees can create plans and reports
-        if ($user->hasRole('employee')) {
+        // For weekly plans and reports, check if period is open
+        if (in_array($type, [self::TYPE_WEEKLY_PLAN, self::TYPE_WEEKLY_REPORT])) {
+            // If period is provided, check if it's open
+            if ($period && !$period->isOpen()) {
+                return false;
+            }
+            
+            // If no period provided, try to get current period
+            if (!$period) {
+                $period = WorkPeriod::getCurrent();
+                if (!$period || !$period->isOpen()) {
+                    return false;
+                }
+            }
+        }
+
+        // Staff can create plans and reports
+        if ($user->hasRole('staff')) {
             return in_array($type, [
                 self::TYPE_WEEKLY_PLAN,
                 self::TYPE_WEEKLY_REPORT,
@@ -360,8 +400,8 @@ class Document extends Model
             return $type === self::TYPE_WEEKLY_MINUTES;
         }
 
-        // Admin and reviewer can create any type
-        if ($user->hasAnyRole(['admin', 'reviewer'])) {
+        // Admin and approver can create any type
+        if ($user->hasAnyRole(['admin', 'approver'])) {
             return true;
         }
 

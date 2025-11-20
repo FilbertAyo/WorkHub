@@ -9,7 +9,6 @@
                 <th>Name</th>
                 <th>Email</th>
                 <th>Phone Number</th>
-                <th>Branch Name</th>
                 <th>Department Name</th>
             </tr>
         </thead>
@@ -20,7 +19,6 @@
                     <td>{{ $user->name }}</td>
                     <td>{{ $user->email }}</td>
                     <td>{{ $user->phone }}</td>
-                    <td>{{ $user->branch->name }}</td>
                     <td>{{ $user->department->name ?? 'N/A' }}</td>
                 </tr>
             @endforeach

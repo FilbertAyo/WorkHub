@@ -22,18 +22,39 @@
                 </a>
             </li>
         </ul>
-          <!-- plan,reports, minutes -->
-          <p class="text-muted nav-heading mt-4 mb-1"><span>Work Hub</span></p>
-          <ul class="navbar-nav flex-fill w-100">
-            @php
-                $user = Auth::user();
-                $showEmployeeDashboard = $user->hasRole('employee') || ($user->hasRole('admin') && !$user->hasAnyRole(['reviewer', 'minutes_preparer']));
-            @endphp
+
+        @php
+            $user = Auth::user();
+            $availableTypes = \App\Models\Document::getAvailableTypesForUser($user);
+            $showEmployeeDashboard = $user->hasRole('employee') || ($user->hasRole('admin') && !$user->hasAnyRole(['reviewer', 'minutes_preparer']));
+        @endphp
+
+        <!-- Weekly Plans & Reports -->
+        <p class="text-muted nav-heading mt-4 mb-1"><span>Weekly Plans & Reports</span></p>
+        <ul class="navbar-nav flex-fill w-100">
+            {{-- @if(isset($availableTypes['weekly_plan']))
+                <li class="nav-item {{ (Request::routeIs('documents.create') && request('type') === 'weekly_plan') ? 'active' : '' }}">
+                    <a href="{{ route('documents.create') }}?type=weekly_plan" class="nav-link">
+                        <i class="fe fe-calendar fe-16"></i>
+                        <span class="ml-3 item-text">New Weekly Plan</span>
+                    </a>
+                </li>
+            @endif
+
+            @if(isset($availableTypes['weekly_report']))
+                <li class="nav-item {{ (Request::routeIs('documents.create') && request('type') === 'weekly_report') ? 'active' : '' }}">
+                    <a href="{{ route('documents.create') }}?type=weekly_report" class="nav-link">
+                        <i class="fe fe-file-text fe-16"></i>
+                        <span class="ml-3 item-text">New Weekly Report</span>
+                    </a>
+                </li>
+            @endif --}}
+
             @if($showEmployeeDashboard)
                 <li class="nav-item {{ Request::routeIs('documents.employee-dashboard') ? 'active' : '' }}">
                     <a href="{{ route('documents.employee-dashboard') }}" class="nav-link">
-                        <i class="fe fe-home fe-16"></i>
-                        <span class="ml-3 item-text">My Dashboard</span>
+                        <i class="fe fe-layout fe-16"></i>
+                        <span class="ml-3 item-text">My Weekly Dashboard</span>
                         @php
                             $pendingCount = \App\Models\Document::drafts()->forUser(Auth::id())->count();
                         @endphp
@@ -43,66 +64,25 @@
                     </a>
                 </li>
             @endif
-            <li class="nav-item {{ Request::routeIs('documents.index') ? 'active' : '' }}">
-                <a href="{{ route('documents.index') }}" class="nav-link">
+
+            <li class="nav-item {{ Request::routeIs('documents.index') && request('type') === 'weekly_plan' ? 'active' : '' }}">
+                <a href="{{ route('documents.index', ['type' => 'weekly_plan']) }}" class="nav-link">
+                    <i class="fe fe-layers fe-16"></i>
+                    <span class="ml-3 item-text">Weekly Plans</span>
+                </a>
+            </li>
+            <li class="nav-item {{ Request::routeIs('documents.index') && request('type') === 'weekly_report' ? 'active' : '' }}">
+                <a href="{{ route('documents.index', ['type' => 'weekly_report']) }}" class="nav-link">
                     <i class="fe fe-list fe-16"></i>
-                    <span class="ml-3 item-text">All Documents</span>
+                    <span class="ml-3 item-text">Weekly Reports</span>
                 </a>
             </li>
 
-            @php
-                $user = Auth::user();
-                $availableTypes = \App\Models\Document::getAvailableTypesForUser($user);
-            @endphp
-
-            @if(!empty($availableTypes))
-                <li class="nav-item dropdown {{ Request::routeIs('documents.create') ? 'active' : '' }}">
-                    <a href="#createDocumentMenu" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle nav-link">
-                        <i class="fe fe-plus-circle fe-16"></i>
-                        <span class="ml-3 item-text">Create Document</span>
-                    </a>
-                    <ul class="collapse list-unstyled pl-4 w-100" id="createDocumentMenu">
-                        @if(isset($availableTypes['weekly_plan']))
-                            <li class="nav-item">
-                                <a class="nav-link pl-3" href="{{ route('documents.create') }}?type=weekly_plan">
-                                    <i class="fe fe-calendar me-1"></i>
-                                    <span class="sub-item">Weekly Plan</span>
-                                </a>
-                            </li>
-                        @endif
-                        @if(isset($availableTypes['weekly_report']))
-                            <li class="nav-item">
-                                <a class="nav-link pl-3" href="{{ route('documents.create') }}?type=weekly_report">
-                                    <i class="fe fe-file-text me-1"></i>
-                                    <span class="sub-item">Weekly Report</span>
-                                </a>
-                            </li>
-                        @endif
-                        @if(isset($availableTypes['monthly_report']))
-                            <li class="nav-item">
-                                <a class="nav-link pl-3" href="{{ route('documents.create') }}?type=monthly_report">
-                                    <i class="fe fe-bar-chart me-1"></i>
-                                    <span class="sub-item">Monthly Report</span>
-                                </a>
-                            </li>
-                        @endif
-                        @if(isset($availableTypes['weekly_minutes']))
-                            <li class="nav-item">
-                                <a class="nav-link pl-3" href="{{ route('documents.create') }}?type=weekly_minutes">
-                                    <i class="fe fe-clipboard me-1"></i>
-                                    <span class="sub-item">Weekly Minutes</span>
-                                </a>
-                            </li>
-                        @endif
-                    </ul>
-                </li>
-            @endif
-
-            @if(Auth::user()->hasAnyRole(['reviewer', 'admin']))
+            @if(Auth::user()->hasAnyRole(['reviewer', 'admin', 'verifier']))
                 <li class="nav-item {{ Request::routeIs('documents.reviewer-dashboard') ? 'active' : '' }}">
                     <a href="{{ route('documents.reviewer-dashboard') }}" class="nav-link">
-                        <i class="fe fe-clipboard fe-16"></i>
-                        <span class="ml-3 item-text">Submitted Documents</span>
+                        <i class="fe fe-check-circle fe-16"></i>
+                        <span class="ml-3 item-text">Review Submissions</span>
                         @php
                             $submittedCount = \App\Models\Document::submitted()->count();
                         @endphp
@@ -112,26 +92,46 @@
                     </a>
                 </li>
             @endif
-          </ul>
+        </ul>
 
-          <!-- Minutes Section (for minutes_preparer) -->
-          @if(Auth::user()->hasAnyRole(['minutes_preparer', 'admin']))
-          <p class="text-muted nav-heading mt-4 mb-1"><span>Minutes Management</span></p>
-          <ul class="navbar-nav flex-fill w-100">
+        <!-- Monthly Reports -->
+        <p class="text-muted nav-heading mt-4 mb-1"><span>Monthly Reports</span></p>
+        <ul class="navbar-nav flex-fill w-100">
+            {{-- @if(isset($availableTypes['monthly_report']))
+                <li class="nav-item {{ (Request::routeIs('documents.create') && request('type') === 'monthly_report') ? 'active' : '' }}">
+                    <a href="{{ route('documents.create') }}?type=monthly_report" class="nav-link">
+                        <i class="fe fe-bar-chart fe-16"></i>
+                        <span class="ml-3 item-text">New Monthly Report</span>
+                    </a>
+                </li>
+            @endif --}}
+            <li class="nav-item {{ Request::routeIs('documents.index') && request('type') === 'monthly_report' ? 'active' : '' }}">
+                <a href="{{ route('documents.index', ['type' => 'monthly_report']) }}" class="nav-link">
+                    <i class="fe fe-folder fe-16"></i>
+                    <span class="ml-3 item-text">Monthly Reports Archive</span>
+                </a>
+            </li>
+            <li class="nav-item {{ Request::routeIs('documents.index') && !request()->has('type') ? 'active' : '' }}">
+                <a href="{{ route('documents.index') }}" class="nav-link">
+                    <i class="fe fe-layers fe-16"></i>
+                    <span class="ml-3 item-text">All Documents</span>
+                </a>
+            </li>
+        </ul>
+
+        <!-- Minutes Section (for minutes_preparer) -->
+        @if(Auth::user()->hasAnyRole(['minutes_preparer', 'admin']))
+        <p class="text-muted nav-heading mt-4 mb-1"><span>Minutes</span></p>
+        <ul class="navbar-nav flex-fill w-100">
             <li class="nav-item {{ Request::routeIs('minutes.index') ? 'active' : '' }}">
                 <a href="{{ route('minutes.index') }}" class="nav-link">
                     <i class="fe fe-clipboard fe-16"></i>
                     <span class="ml-3 item-text">My Minutes</span>
                 </a>
             </li>
-            <li class="nav-item {{ Request::routeIs('minutes.create') ? 'active' : '' }}">
-                <a href="{{ route('minutes.create') }}" class="nav-link">
-                    <i class="fe fe-plus-circle fe-16"></i>
-                    <span class="ml-3 item-text">Create Minutes</span>
-                </a>
-            </li>
-          </ul>
-          @endif
+
+        </ul>
+        @endif
 
         <!-- Petty Cash -->
         <p class="text-muted nav-heading mt-4 mb-1"><span>Petty Cash</span></p>
@@ -188,19 +188,27 @@
             </ul>
         @endcan
 
-
-        @can('view reports')
             <p class="text-muted nav-heading mt-4 mb-1"><span>Reports and Settings</span></p>
-            <ul class="navbar-nav flex-fill w-100">
-                <li class="nav-item {{ Request::routeIs('reports') ? 'active' : '' }}">
-                    <a href="{{ route('reports') }}" class="nav-link">
-                        <i class="fe fe-box"></i>
-                        <span class="ml-3 item-text">Reports</span>
-                    </a>
-                </li>
-            </ul>
-        @endcan
 
+
+        <ul class="navbar-nav flex-fill w-100">
+            <li class="nav-item {{ Request::routeIs('work-periods.*') ? 'active' : '' }}">
+                <a href="{{ route('work-periods.index') }}" class="nav-link">
+                    <i class="fe fe-calendar fe-16"></i>
+                    <span class="ml-3 item-text">Manage Work Periods</span>
+                </a>
+            </li>
+        </ul>
+        @can('view reports')
+        <ul class="navbar-nav flex-fill w-100">
+            <li class="nav-item {{ Request::routeIs('reports') ? 'active' : '' }}">
+                <a href="{{ route('reports') }}" class="nav-link">
+                    <i class="fe fe-box"></i>
+                    <span class="ml-3 item-text">Reports</span>
+                </a>
+            </li>
+        </ul>
+    @endcan
 
         @can('view settings')
             <ul class="navbar-nav flex-fill w-100">
@@ -233,6 +241,7 @@
                                 <span class="sub-item">Notifications</span>
                             </a>
                         </li>
+
 
 
                     </ul>

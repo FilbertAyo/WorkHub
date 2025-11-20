@@ -1,0 +1,295 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\WorkPeriod;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
+use Vinkla\Hashids\Facades\Hashids;
+
+class WorkPeriodController extends Controller
+{
+    /**
+     * Check if user is admin (for create/edit/delete operations)
+     */
+    private function checkAdmin()
+    {
+        if (!Auth::user()->hasRole('admin')) {
+            abort(403, 'Unauthorized access. Only administrators can manage work periods.');
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * Anyone can view work periods
+     */
+    public function index(Request $request)
+    {
+        if (!$request->user()->hasRole('admin')) {
+            abort(403, 'Unauthorized access.');
+        }
+
+        $query = WorkPeriod::query();
+
+        // Filter by year if provided
+        if ($request->has('year') && $request->year) {
+            $query->byYear($request->year);
+        } else {
+            // Default to current year
+            $query->byYear(Carbon::now()->year);
+        }
+
+        // Filter by status if provided
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+
+        $periods = $query->orderBy('year', 'desc')
+            ->orderBy('week_number', 'desc')
+            ->paginate(20)
+            ->withQueryString();
+
+        // Get available years for filter
+        $years = WorkPeriod::select('year')
+            ->distinct()
+            ->orderBy('year', 'desc')
+            ->pluck('year');
+
+        // Get current period
+        $currentPeriod = WorkPeriod::getCurrent();
+
+        // Get the last period to suggest next week (for modal)
+        $lastPeriod = WorkPeriod::orderBy('year', 'desc')
+            ->orderBy('week_number', 'desc')
+            ->first();
+
+        // Get current year for modal
+        $currentYear = Carbon::now()->year;
+
+        return view('settings.work-periods.index', compact('periods', 'years', 'currentPeriod', 'lastPeriod', 'currentYear'));
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     * Only admin can create work periods
+     */
+    public function create()
+    {
+        $this->checkAdmin();
+        
+        // Get the last period to suggest next week
+        $lastPeriod = WorkPeriod::orderBy('year', 'desc')
+            ->orderBy('week_number', 'desc')
+            ->first();
+
+        // Get current year
+        $currentYear = Carbon::now()->year;
+        $currentWeek = Carbon::now()->week;
+
+        return view('settings.work-periods.create', compact('lastPeriod', 'currentYear', 'currentWeek'));
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     * Only admin can create work periods
+     */
+    public function store(Request $request)
+    {
+        $this->checkAdmin();
+        
+        abort_unless(Auth::user()->hasRole('admin'), 403, 'Unauthorized.');
+
+        $request->validate([
+            'year' => ['required', 'integer', 'min:2020', 'max:2100'],
+            'week_number' => ['required', 'integer', 'min:1', 'max:53'],
+            'week_start_date' => ['required', 'date'],
+        ]);
+
+        // Check if period already exists
+        $exists = WorkPeriod::where('year', $request->year)
+            ->where('week_number', $request->week_number)
+            ->exists();
+
+        if ($exists) {
+            return redirect()->route('work-periods.index')
+                ->withInput()
+                ->with('error', "Week {$request->week_number} of {$request->year} already exists.");
+        }
+
+        // Calculate week end date (6 days after start = Sunday to Saturday)
+        $startDate = Carbon::parse($request->week_start_date);
+        $endDate = $startDate->copy()->addDays(6);
+
+        // Calculate deadlines
+        // Plan deadline: Friday of the week (5 days after start, or 4th day if start is Monday)
+        // Report deadline: Saturday of the week (6 days after start)
+        $planDeadline = $startDate->copy()->addDays(4); // Friday
+        $reportDeadline = $startDate->copy()->addDays(5); // Saturday
+
+        // Ensure deadlines are within the week
+        if ($planDeadline->dayOfWeek !== Carbon::FRIDAY) {
+            // Adjust to nearest Friday
+            $planDeadline = $startDate->copy()->next(Carbon::FRIDAY);
+            if ($planDeadline->gt($endDate)) {
+                $planDeadline = $startDate->copy()->previous(Carbon::FRIDAY);
+            }
+        }
+
+        if ($reportDeadline->dayOfWeek !== Carbon::SATURDAY) {
+            // Adjust to nearest Saturday
+            $reportDeadline = $startDate->copy()->next(Carbon::SATURDAY);
+            if ($reportDeadline->gt($endDate)) {
+                $reportDeadline = $startDate->copy()->previous(Carbon::SATURDAY);
+            }
+        }
+
+        $period = WorkPeriod::create([
+            'year' => $request->year,
+            'week_number' => $request->week_number,
+            'week_start_date' => $startDate->format('Y-m-d'),
+            'week_end_date' => $endDate->format('Y-m-d'),
+            'plan_deadline' => $planDeadline->format('Y-m-d'),
+            'report_deadline' => $reportDeadline->format('Y-m-d'),
+            'status' => WorkPeriod::STATUS_OPEN,
+        ]);
+
+        return redirect()->route('work-periods.index')
+            ->with('success', "Work period created successfully: Week {$period->week_number} of {$period->year}");
+    }
+
+    /**
+     * Display the specified resource.
+     * Anyone can view work periods
+     */
+    public function show(string $id)
+    {
+        abort_unless(Auth::user()->hasRole('admin'), 403, 'Unauthorized.');
+
+        $decodedId = Hashids::decode($id);
+        $period = WorkPeriod::with(['documents.user', 'weeklyPlans.user', 'weeklyReports.user'])
+            ->findOrFail($decodedId[0] ?? null);
+
+        // Get statistics
+        $stats = [
+            'total_documents' => $period->documents()->count(),
+            'weekly_plans' => $period->weeklyPlans()->count(),
+            'weekly_reports' => $period->weeklyReports()->count(),
+            'monthly_reports' => $period->monthlyReports()->count(),
+            'weekly_minutes' => $period->weeklyMinutes()->count(),
+        ];
+
+        return view('settings.work-periods.show', compact('period', 'stats'));
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     * Only admin can edit work periods
+     */
+    public function edit(string $id)
+    {
+        $this->checkAdmin();
+        
+        abort_unless(Auth::user()->hasRole('admin'), 403, 'Unauthorized.');
+
+        $decodedId = Hashids::decode($id);
+        $period = WorkPeriod::findOrFail($decodedId[0] ?? null);
+
+        return view('settings.work-periods.edit', compact('period'));
+    }
+
+    /**
+     * Update the specified resource in storage.
+     * Only admin can update work periods
+     */
+    public function update(Request $request, string $id)
+    {
+        $this->checkAdmin();
+        
+        abort_unless(Auth::user()->hasRole('admin'), 403, 'Unauthorized.');
+
+        $decodedId = Hashids::decode($id);
+        $period = WorkPeriod::findOrFail($decodedId[0] ?? null);
+
+        $request->validate([
+            'week_start_date' => ['required', 'date'],
+            'plan_deadline' => ['required', 'date'],
+            'report_deadline' => ['required', 'date'],
+            'status' => ['required', 'in:open,closed,archived'],
+        ]);
+
+        // Calculate week end date
+        $startDate = Carbon::parse($request->week_start_date);
+        $endDate = $startDate->copy()->addDays(6);
+
+        $period->update([
+            'week_start_date' => $startDate->format('Y-m-d'),
+            'week_end_date' => $endDate->format('Y-m-d'),
+            'plan_deadline' => Carbon::parse($request->plan_deadline)->format('Y-m-d'),
+            'report_deadline' => Carbon::parse($request->report_deadline)->format('Y-m-d'),
+            'status' => $request->status,
+        ]);
+
+        return redirect()->route('work-periods.index')
+            ->with('success', "Work period updated successfully.");
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     * Only admin can delete work periods
+     */
+    public function destroy(string $id)
+    {
+        $this->checkAdmin();
+        
+        abort_unless(Auth::user()->hasRole('admin'), 403, 'Unauthorized.');
+
+        $decodedId = Hashids::decode($id);
+        $period = WorkPeriod::findOrFail($decodedId[0] ?? null);
+
+        // Check if period has documents
+        if ($period->documents()->count() > 0) {
+            return redirect()->back()
+                ->with('error', 'Cannot delete work period that has associated documents. Please archive it instead.');
+        }
+
+        $period->delete();
+
+        return redirect()->route('work-periods.index')
+            ->with('success', 'Work period deleted successfully.');
+    }
+
+    /**
+     * Close a work period
+     * Only admin can close work periods
+     */
+    public function close(string $id)
+    {
+        $this->checkAdmin();
+        
+        $decodedId = Hashids::decode($id);
+        $period = WorkPeriod::findOrFail($decodedId[0] ?? null);
+
+        $period->close();
+
+        return redirect()->back()
+            ->with('success', 'Work period closed successfully.');
+    }
+
+    /**
+     * Archive a work period
+     * Only admin can archive work periods
+     */
+    public function archive(string $id)
+    {
+        $this->checkAdmin();
+        
+        $decodedId = Hashids::decode($id);
+        $period = WorkPeriod::findOrFail($decodedId[0] ?? null);
+
+        $period->archive();
+
+        return redirect()->back()
+            ->with('success', 'Work period archived successfully.');
+    }
+}

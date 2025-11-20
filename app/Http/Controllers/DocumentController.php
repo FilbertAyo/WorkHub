@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Document;
+use App\Models\WorkPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Vinkla\Hashids\Facades\Hashids;
@@ -17,10 +18,10 @@ class DocumentController extends Controller
         $this->authorize('viewAny', Document::class);
 
         $user = Auth::user();
-        $query = Document::with('user');
+        $query = Document::with(['user', 'period']);
 
         // Reviewers and admins can see all documents, others see only their own
-        if (!$user->hasAnyRole(['reviewer', 'admin'])) {
+        if (!$user->hasAnyRole(['reviewer', 'admin', 'verifier', 'approver'])) {
             $query->forUser($user->id);
         }
 
@@ -29,9 +30,50 @@ class DocumentController extends Controller
             $query->ofType($request->type);
         }
 
+        // Filter by period if provided
+        if ($request->has('period_id') && $request->period_id) {
+            $query->forPeriod($request->period_id);
+        }
+
+        // Filter by year if provided
+        if ($request->has('year') && $request->year) {
+            $query->whereHas('period', function($q) use ($request) {
+                $q->where('year', $request->year);
+            });
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
+        }
+
         $documents = $query->latest()->paginate(15)->withQueryString();
 
-        return view('documents.index', compact('documents'));
+        $currentPeriod = WorkPeriod::getCurrent();
+        $nextPeriod = $currentPeriod ? $currentPeriod->getNextPeriod() : null;
+        $deadlineStatuses = null;
+        if ($currentPeriod) {
+            $deadlineStatuses = [
+                'plan_badge' => $currentPeriod->getPlanDeadlineBadgeClass(),
+                'plan_text' => $currentPeriod->getDeadlineStatusText('plan'),
+                'plan_due' => $currentPeriod->plan_deadline,
+                'report_badge' => $currentPeriod->getReportDeadlineBadgeClass(),
+                'report_text' => $currentPeriod->getDeadlineStatusText('report'),
+                'report_due' => $currentPeriod->report_deadline,
+            ];
+        }
+
+        return view('documents.index', [
+            'documents' => $documents,
+            'periods' => WorkPeriod::orderBy('year', 'desc')->orderBy('week_number', 'desc')->get(),
+            'years' => WorkPeriod::select('year')->distinct()->orderBy('year', 'desc')->pluck('year'),
+            'currentPeriod' => $currentPeriod,
+            'nextPeriod' => $nextPeriod,
+            'deadlineStatuses' => $deadlineStatuses,
+        ]);
     }
 
     /**
@@ -44,7 +86,7 @@ class DocumentController extends Controller
 
         // Authorize create action
         $this->authorize('create', Document::class);
-        
+
         // If type is specified, also check if user can create that specific type
         if ($selectedType) {
             $this->authorize('createType', [Document::class, $selectedType]);
@@ -82,9 +124,48 @@ class DocumentController extends Controller
 
         // Authorize create action
         $this->authorize('create', Document::class);
-        
+
         // Authorize create action with the specific type
         $this->authorize('createType', [Document::class, $request->type]);
+
+        // Get appropriate period based on document type
+        $period = null;
+        if (in_array($request->type, [Document::TYPE_WEEKLY_PLAN, Document::TYPE_WEEKLY_REPORT])) {
+            if ($request->type === Document::TYPE_WEEKLY_PLAN) {
+                // Plan is for NEXT week (submitted during current week)
+                $currentPeriod = WorkPeriod::getCurrent();
+                if ($currentPeriod) {
+                    $period = $currentPeriod->getNextPeriod();
+                    if (!$period) {
+                        return redirect()->back()
+                            ->withInput()
+                            ->with('error', 'Next week period not found. Please contact administrator.');
+                    }
+                } else {
+                    return redirect()->back()
+                        ->withInput()
+                        ->with('error', 'No current work period found. Please contact administrator.');
+                }
+            } elseif ($request->type === Document::TYPE_WEEKLY_REPORT) {
+                // Report is for CURRENT week
+                $period = WorkPeriod::getCurrent();
+                if (!$period) {
+                    return redirect()->back()
+                        ->withInput()
+                        ->with('error', 'No current work period found. Please contact administrator.');
+                }
+            }
+        } elseif ($request->type === Document::TYPE_MONTHLY_REPORT) {
+            // Monthly report uses current period
+            $period = WorkPeriod::getCurrent();
+        }
+        // weekly_minutes doesn't require a period (can be null)
+
+        if ($period && !$period->isOpen()) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'This work period is closed. Please contact your administrator.');
+        }
 
         // Determine state based on action
         $action = $request->input('action', 'draft');
@@ -92,16 +173,17 @@ class DocumentController extends Controller
 
         $document = Document::create([
             'user_id' => $user->id,
+            'period_id' => $period?->id,
             'type' => $request->type,
             'data' => [
-                'content' => $request->content,
-                'title' => $request->title ?? 'Untitled',
+                'content' => $request->input('content'),
+                'title' => $request->input('title', 'Untitled'),
             ],
             'state' => $state,
         ]);
 
-        $message = ($action === 'submit') 
-            ? 'Document submitted successfully.' 
+        $message = ($action === 'submit')
+            ? 'Document submitted successfully.'
             : 'Document saved as draft.';
 
         return redirect()->route('documents.show', Hashids::encode($document->id))
@@ -114,13 +196,53 @@ class DocumentController extends Controller
     public function show(string $id)
     {
         $decodedId = Hashids::decode($id);
-        $document = Document::with(['user', 'comments.user'])
+        $document = Document::with(['user', 'period', 'comments.user'])
             ->findOrFail($decodedId[0] ?? null);
 
         // Authorize view action
         $this->authorize('view', $document);
 
-        return view('documents.show', compact('document'));
+        // Get related documents (plan for report, report for plan)
+        $relatedDocument = null;
+        $relatedAction = null;
+        if ($document->period_id) {
+            if ($document->type === Document::TYPE_WEEKLY_PLAN) {
+                // Get the report for this period (same period)
+                $relatedDocument = Document::where('period_id', $document->period_id)
+                    ->where('type', Document::TYPE_WEEKLY_REPORT)
+                    ->where('user_id', $document->user_id)
+                    ->first();
+            } elseif ($document->type === Document::TYPE_WEEKLY_REPORT) {
+                // Get the plan for this period (same period)
+                $relatedDocument = Document::where('period_id', $document->period_id)
+                    ->where('type', Document::TYPE_WEEKLY_PLAN)
+                    ->where('user_id', $document->user_id)
+                    ->first();
+            }
+
+            if (!$relatedDocument) {
+                $user = Auth::user();
+                if ($document->type === Document::TYPE_WEEKLY_PLAN &&
+                    Document::canUserCreateType($user, Document::TYPE_WEEKLY_REPORT, $document->period)) {
+                    $relatedAction = [
+                        'type' => Document::TYPE_WEEKLY_REPORT,
+                        'label' => 'Create Weekly Report for this Week',
+                        'route' => route('documents.create', ['type' => Document::TYPE_WEEKLY_REPORT]),
+                        'description' => 'Weekly report is due on ' . $document->period->report_deadline->format('M d, Y'),
+                    ];
+                } elseif ($document->type === Document::TYPE_WEEKLY_REPORT &&
+                    Document::canUserCreateType($user, Document::TYPE_WEEKLY_PLAN, $document->period)) {
+                    $relatedAction = [
+                        'type' => Document::TYPE_WEEKLY_PLAN,
+                        'label' => 'Create Weekly Plan for this Week',
+                        'route' => route('documents.create', ['type' => Document::TYPE_WEEKLY_PLAN]),
+                        'description' => 'Weekly plan should outline goals for this week.',
+                    ];
+                }
+            }
+        }
+
+        return view('documents.show', compact('document', 'relatedDocument', 'relatedAction'));
     }
 
     /**
@@ -155,20 +277,20 @@ class DocumentController extends Controller
 
         // Determine state based on action
         $action = $request->input('action', 'draft');
-        
+
         // If submitting, authorize submit action
         if ($action === 'submit') {
             $this->authorize('submit', $document);
         }
 
         $data = $document->data ?? [];
-        $data['content'] = $request->content;
-        if ($request->has('title')) {
-            $data['title'] = $request->title;
+        $data['content'] = $request->input('content');
+        if ($request->filled('title')) {
+            $data['title'] = $request->input('title');
         }
 
         $updateData = ['data' => $data];
-        
+
         // Update state if submitting
         if ($action === 'submit') {
             $updateData['state'] = Document::STATE_SUBMITTED;
@@ -176,8 +298,8 @@ class DocumentController extends Controller
 
         $document->update($updateData);
 
-        $message = ($action === 'submit') 
-            ? 'Document submitted successfully.' 
+        $message = ($action === 'submit')
+            ? 'Document submitted successfully.'
             : 'Document updated successfully.';
 
         return redirect()->route('documents.show', $id)
@@ -260,7 +382,16 @@ class DocumentController extends Controller
             }
         }
 
-        // Get all documents (for grouping)
+        if ($request->has('work_period_id') && $request->work_period_id) {
+            $baseQuery->where('period_id', $request->work_period_id);
+        }
+
+        if ($request->has('year') && $request->year) {
+            $baseQuery->whereHas('period', function($q) use ($request) {
+                $q->where('year', $request->year);
+            });
+        }
+
         $allDocuments = (clone $baseQuery)->latest()->get();
 
         // Group documents by type
@@ -287,12 +418,25 @@ class DocumentController extends Controller
             'weekly_minutes' => (clone $statsQuery)->weeklyMinutes()->count(),
         ];
 
-        // Get all users who have submitted documents (for filter)
         $usersWithDocuments = \App\Models\User::whereHas('documents', function($q) {
             $q->submitted();
         })->orderBy('name')->get();
 
-        return view('documents.reviewer-dashboard', compact('groupedDocuments', 'stats', 'usersWithDocuments', 'selectedType'));
+        $periodOptions = WorkPeriod::orderBy('year', 'desc')
+            ->orderBy('week_number', 'desc')
+            ->take(20)
+            ->get();
+
+        $years = WorkPeriod::select('year')->distinct()->orderBy('year', 'desc')->pluck('year');
+
+        return view('documents.reviewer-dashboard', compact(
+            'groupedDocuments',
+            'stats',
+            'usersWithDocuments',
+            'selectedType',
+            'periodOptions',
+            'years'
+        ));
     }
 
     /**
@@ -308,18 +452,47 @@ class DocumentController extends Controller
             abort(403, 'Unauthorized access. This dashboard is for employees only.');
         }
 
-        // Get pending submissions (draft documents)
-        $pendingDocuments = Document::with('comments')
-            ->forUser($user->id)
-            ->drafts()
-            ->latest()
+        $availableTypes = Document::getAvailableTypesForUser($user);
+        $currentPeriod = WorkPeriod::getCurrent();
+        $nextPeriod = $currentPeriod ? $currentPeriod->getNextPeriod() : null;
+
+        $periodFilterId = $request->input('period_id');
+        $periodOptions = WorkPeriod::orderBy('year', 'desc')
+            ->orderBy('week_number', 'desc')
+            ->take(20)
             ->get();
 
-        // Get all documents (history)
-        $allDocuments = Document::with('comments')
+        $deadlineStatuses = null;
+        if ($currentPeriod) {
+            $deadlineStatuses = [
+                'plan_badge' => $currentPeriod->getPlanDeadlineBadgeClass(),
+                'plan_text' => $currentPeriod->getDeadlineStatusText('plan'),
+                'plan_due' => $currentPeriod->plan_deadline,
+                'report_badge' => $currentPeriod->getReportDeadlineBadgeClass(),
+                'report_text' => $currentPeriod->getDeadlineStatusText('report'),
+                'report_due' => $currentPeriod->report_deadline,
+            ];
+        }
+
+        // Get pending submissions (draft documents)
+        $pendingDocumentsQuery = Document::with('comments')
             ->forUser($user->id)
-            ->latest()
-            ->get();
+            ->drafts()
+            ->latest();
+
+        $allDocumentsQuery = Document::with('comments')
+            ->forUser($user->id)
+            ->latest();
+
+        if ($periodFilterId) {
+            $pendingDocumentsQuery->where('period_id', $periodFilterId);
+            $allDocumentsQuery->where('period_id', $periodFilterId);
+        }
+
+        $pendingDocuments = $pendingDocumentsQuery->get();
+
+        // Get all documents (history)
+        $allDocuments = $allDocumentsQuery->get();
 
         // Group pending by type for better organization
         $pendingByType = [
@@ -337,6 +510,51 @@ class DocumentController extends Controller
             'monthly_report_pending' => $pendingByType['monthly_report']->count(),
         ];
 
-        return view('documents.employee-dashboard', compact('pendingDocuments', 'allDocuments', 'pendingByType', 'stats'));
+        $periodInfo = [
+            'current' => $currentPeriod,
+            'next' => $nextPeriod,
+        ];
+
+        $timelineData = WorkPeriod::orderBy('year', 'desc')
+            ->orderBy('week_number', 'desc')
+            ->take(6)
+            ->get()
+            ->map(function ($period) use ($user) {
+                $plan = Document::where('user_id', $user->id)
+                    ->where('period_id', $period->id)
+                    ->where('type', Document::TYPE_WEEKLY_PLAN)
+                    ->first();
+
+                $report = Document::where('user_id', $user->id)
+                    ->where('period_id', $period->id)
+                    ->where('type', Document::TYPE_WEEKLY_REPORT)
+                    ->first();
+
+                return [
+                    'period' => $period,
+                    'plan' => $plan,
+                    'report' => $report,
+                    'plan_status' => $plan?->state ?? 'missing',
+                    'report_status' => $report?->state ?? 'missing',
+                ];
+            })
+            ->sortByDesc(fn ($entry) => $entry['period']->week_start_date)
+            ->values();
+
+        $selectedPeriod = $periodOptions->firstWhere('id', $periodFilterId);
+
+        return view('documents.employee-dashboard', compact(
+            'pendingDocuments',
+            'allDocuments',
+            'pendingByType',
+            'stats',
+            'periodInfo',
+            'deadlineStatuses',
+            'availableTypes',
+            'periodOptions',
+            'selectedPeriod',
+            'periodFilterId',
+            'timelineData'
+        ));
     }
 }

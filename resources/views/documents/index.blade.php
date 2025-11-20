@@ -38,118 +38,119 @@
         </div>
     @endif
 
-    <div class="row my-2">
+    <div class="row">
         <div class="col-md-12">
-            <div class="card shadow-none border">
+            <div class="card shadow-none border mb-4">
                 <div class="card-header bg-white border-bottom">
                     <div class="row align-items-center">
                         <div class="col-md-6">
                             <h5 class="mb-0"><i class="fe fe-list me-2"></i>Documents List</h5>
                         </div>
-                        <div class="col-md-6 text-right">
-                            <div class="btn-group btn-group-sm" role="group">
-                                <a href="{{ route('documents.index') }}" 
-                                   class="btn {{ !request('type') ? 'btn-primary' : 'btn-light' }}">
-                                    All
-                                </a>
-                                <a href="{{ route('documents.index', ['type' => 'weekly_plan']) }}" 
-                                   class="btn {{ request('type') == 'weekly_plan' ? 'btn-primary' : 'btn-light' }}">
-                                    Weekly Plans
-                                </a>
-                                <a href="{{ route('documents.index', ['type' => 'weekly_report']) }}" 
-                                   class="btn {{ request('type') == 'weekly_report' ? 'btn-primary' : 'btn-light' }}">
-                                    Weekly Reports
-                                </a>
-                                <a href="{{ route('documents.index', ['type' => 'monthly_report']) }}" 
-                                   class="btn {{ request('type') == 'monthly_report' ? 'btn-primary' : 'btn-light' }}">
-                                    Monthly Reports
-                                </a>
-                                <a href="{{ route('documents.index', ['type' => 'weekly_minutes']) }}" 
-                                   class="btn {{ request('type') == 'weekly_minutes' ? 'btn-primary' : 'btn-light' }}">
-                                    Weekly Minutes
-                                </a>
-                            </div>
+                        <div class="col-md-6">
+                            <form method="GET" action="{{ route('documents.index') }}" class="row">
+                                <div class="col-md-3 mb-2">
+                                    <select name="type" class="form-control">
+                                        <option value="">All Types</option>
+                                        <option value="weekly_plan" {{ request('type') === 'weekly_plan' ? 'selected' : '' }}>Weekly Plans</option>
+                                        <option value="weekly_report" {{ request('type') === 'weekly_report' ? 'selected' : '' }}>Weekly Reports</option>
+                                        <option value="monthly_report" {{ request('type') === 'monthly_report' ? 'selected' : '' }}>Monthly Reports</option>
+                                        <option value="weekly_minutes" {{ request('type') === 'weekly_minutes' ? 'selected' : '' }}>Minutes</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <select name="period_id" class="form-control">
+                                        <option value="">All Weeks</option>
+                                        @foreach($periods as $period)
+                                            <option value="{{ $period->id }}" {{ request('period_id') == $period->id ? 'selected' : '' }}>
+                                                Week {{ $period->week_number }} • {{ $period->date_range }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <select name="year" class="form-control">
+                                        <option value="">All Years</option>
+                                        @foreach($years as $year)
+                                            <option value="{{ $year }}" {{ request('year') == $year ? 'selected' : '' }}>
+                                                {{ $year }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <input type="date" name="date_from" class="form-control" value="{{ request('date_from') }}">
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <input type="date" name="date_to" class="form-control" value="{{ request('date_to') }}">
+                                </div>
+                                <div class="col-md-6 d-flex gap-2">
+                                    <button type="submit" class="btn btn-primary btn-sm mr-2">
+                                        <i class="fe fe-filter me-1"></i> Filter
+                                    </button>
+                                    <a href="{{ route('documents.index') }}" class="btn btn-light btn-sm">
+                                        <i class="fe fe-x me-1"></i> Reset
+                                    </a>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>
                 <div class="card-body">
-                    @if($documents->count() > 0)
-                        <div class="table-responsive">
-                            <table class="table table-hover table-bordered">
-                                <thead class="thead-light">
-                                    <tr>
-                                        <th class="text-center" style="width: 50px;">No.</th>
-                                        <th>Type</th>
-                                        <th>Title</th>
-                                        <th>State</th>
-                                        <th>Created</th>
-                                        <th class="text-center" style="width: 150px;">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach($documents as $document)
-                                        <tr>
-                                            <td class="text-center">{{ $loop->iteration }}</td>
-                                            <td>
-                                                <span class="badge badge-info">
-                                                    <i class="fe fe-file me-1"></i>
-                                                    {{ $document->type_name }}
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <strong>{{ $document->getDataField('title', 'Untitled') }}</strong>
-                                            </td>
-                                            <td>
-                                                @if($document->state === 'draft')
-                                                    <span class="badge badge-warning">
-                                                        <i class="fe fe-edit me-1"></i>Draft
-                                                    </span>
-                                                @else
-                                                    <span class="badge badge-success">
-                                                        <i class="fe fe-check-circle me-1"></i>Submitted
-                                                    </span>
-                                                @endif
-                                            </td>
-                                            <td>
-                                                <small class="text-muted">
-                                                    {{ $document->created_at->format('M d, Y') }}
-                                                </small>
-                                            </td>
-                                            <td class="text-center">
-                                                <div class="btn-group btn-group-sm" role="group">
-                                                    <a href="{{ route('documents.show', \Vinkla\Hashids\Facades\Hashids::encode($document->id)) }}"
-                                                        class="btn btn-info text-white" title="View">
-                                                        <i class="fe fe-eye"></i>
-                                                    </a>
-                                                    @if($document->canBeEdited())
-                                                        <a href="{{ route('documents.edit', \Vinkla\Hashids\Facades\Hashids::encode($document->id)) }}"
-                                                            class="btn btn-primary text-white" title="Edit">
-                                                            <i class="fe fe-edit"></i>
-                                                        </a>
-                                                    @endif
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <div class="border rounded p-3 h-100">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p class="text-muted mb-1"><i class="fe fe-target me-1 text-info"></i>Plan Deadline</p>
+                                        @if($deadlineStatuses)
+                                            <h5 class="mb-1">{{ \Carbon\Carbon::parse($deadlineStatuses['plan_due'])->format('M d, Y') }}</h5>
+                                            <span class="badge {{ $deadlineStatuses['plan_badge'] }}">{{ $deadlineStatuses['plan_text'] }}</span>
+                                        @else
+                                            <span class="text-muted">No current period</span>
+                                        @endif
+                                    </div>
+                                    <a href="{{ route('documents.index', ['type' => 'weekly_plan']) }}" class="btn btn-outline-info btn-sm">
+                                        View Plans
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-
-                        <div class="mt-3">
-                            {{ $documents->links() }}
+                        <div class="col-md-4 mb-3">
+                            <div class="border rounded p-3 h-100">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p class="text-muted mb-1"><i class="fe fe-activity me-1 text-primary"></i>Report Deadline</p>
+                                        @if($deadlineStatuses)
+                                            <h5 class="mb-1">{{ \Carbon\Carbon::parse($deadlineStatuses['report_due'])->format('M d, Y') }}</h5>
+                                            <span class="badge {{ $deadlineStatuses['report_badge'] }}">{{ $deadlineStatuses['report_text'] }}</span>
+                                        @else
+                                            <span class="text-muted">No current period</span>
+                                        @endif
+                                    </div>
+                                    <a href="{{ route('documents.index', ['type' => 'weekly_report']) }}" class="btn btn-outline-primary btn-sm">
+                                        View Reports
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                    @else
-                        <div class="text-center py-5">
-                            <i class="fe fe-file-text fs-1 text-muted"></i>
-                            <p class="text-muted mb-3 mt-3">No documents found</p>
-                            <a href="{{ route('documents.create') }}" class="btn btn-primary">
-                                <i class="fe fe-plus-circle me-1"></i>Create Your First Document
-                            </a>
+                        <div class="col-md-4 mb-3">
+                            <div class="border rounded p-3 h-100">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p class="text-muted mb-1"><i class="fe fe-calendar me-1 text-secondary"></i>Quick Period</p>
+                                        @if($currentPeriod)
+                                            <h5 class="mb-1">Week {{ $currentPeriod->week_number }}</h5>
+                                            <small class="text-muted">{{ $currentPeriod->date_range }}</small>
+                                        @else
+                                            <span class="text-muted">No period</span>
+                                        @endif
+                                    </div>
+                                    <a href="{{ route('work-periods.index') }}" class="btn btn-outline-secondary btn-sm">
+                                        Work Periods
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-    </div>
+                    </div>
 </x-app-layout>
 
